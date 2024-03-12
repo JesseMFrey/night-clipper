@@ -13,11 +13,12 @@ ELF        := $(BUILD_DIR)/$(SRC).elf
 .PHONY: all
 all: $(ELF) 
 
+.PHONY: $(ELF)
 $(ELF): $(SRC) $(HDRS)
-	arduino-cli compile -b $(FQBN)
+	arduino-cli compile --build-cache-path $(BUILD_DIR) -b $(FQBN)
 
 .PHONY: upload
-upload: $(ELF)
+upload: 
 	@echo "---> Uploading code"
 	arduino-cli upload -b $(FQBN) -p $(SERIAL_DEV)
 
