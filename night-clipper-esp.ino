@@ -2,11 +2,17 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <AlfredoCRSF.h>
+#include <limits.h>
+#include <math.h>
 
 enum{FLIGHT_MODE_GLIDE=0,FLIGHT_MODE_LAUNCH};
 enum{LED_MODE_STARTUP=0,LED_MODE_0,LED_MODE_1,LED_MODE_2};
 
 typedef uint32_t PIXEL_COLOR;
+
+#define HUE_25PCT     ((0xFFFF)/4)
+#define HUE_50PCT     ((0xFFFF)/2)
+#define HUE_75PCT     ((0xFFFF) - HUE_25PCT)
 
 #define LED_PIN        A0
 #define REG_PIN        A1
@@ -15,6 +21,20 @@ typedef uint32_t PIXEL_COLOR;
 #define NC_GREEN_PIN  A3
 #define NC_BLUE_PIN   SDA
 
+#define RED_MASK      (0x00FF0000)
+#define GREEN_MASK    (0x0000FF00)
+#define BLUE_MASK     (0x000000FF)
+
+#define RED_SHIFT     (16)
+#define GREEN_SHIFT   (8)
+#define BLUE_SHIFT    (0)
+
+#define RED_PWM_CHANNEL       (1)
+#define GREEN_PWM_CHANNEL     (2)
+#define BLUE_PWM_CHANNEL      (3)
+
+#define NC_PWM_RESOLUTION     (8)
+#define NC_PWM_FREQ           (500)
 
 #define WING_TIP_LEDS (28)
 #define PARALLEL_LEDS (44)
@@ -36,7 +56,7 @@ typedef uint32_t PIXEL_COLOR;
 // 2 strings (left and right) 72 LEDS parallel to body, 28 to wingtip
 // 2 tail strings (one on either side) of 20 LEDs each
 // 4 discrete LEDS on the aft end
-#define NUM_LEDS (2 * (WING_BOT_LEDS + TAIL_LEDS) + 4)
+#define NUM_LEDS (2 * (WING_BOT_LEDS + WING_TOP_LEDS + TAIL_LEDS) + 4)
 
 #define LED_TASK_PRIORITY     2
 
@@ -46,19 +66,19 @@ StackType_t LED_task_stack[LED_TASK_STACK_SIZE];
 
 StaticTask_t LED_task;
 
-enum Led_Stat {LED_BLINK_OFF=0, LED_ERROR_CRSF, LED_STAT_GOOD, LED_STAT_LINK_LOST};
+enum Led_Stat {LED_STAT_STARTUP=0,LED_ERROR_CRSF, LED_STAT_GOOD, LED_STAT_LINK_LOST, LED_STAT_WIFI};
 
-Led_Stat board_led_state = LED_BLINK_OFF;
+Led_Stat board_led_state = LED_STAT_STARTUP;
 AlfredoCRSF rc_link = AlfredoCRSF();
 
 
 //swap red and green on a color
 PIXEL_COLOR color_swap(PIXEL_COLOR color)
 {
-  PIXEL_COLOR temp = color & 0xFFFF00;
+  PIXEL_COLOR temp = color & ~(RED_MASK|GREEN_MASK);
 
-  temp |= (color & 0xFF0000) >> 8;
-  temp |= (color & 0xFF00) << 8;
+  temp |= ((color & RED_MASK) >> RED_SHIFT) << GREEN_SHIFT;
+  temp |= ((color & GREEN_MASK) >> GREEN_SHIFT) << RED_SHIFT;
   return temp;
 }
 
@@ -113,10 +133,31 @@ int map_led_mode(int mode_val)
 }
 
 struct {
-  uint8_t hue, sat, brt;
+  uint16_t hue;
+  uint8_t sat, brt;
   uint8_t flight_mode;
   uint8_t led_mode;
 } pattern_info;
+
+uint16_t map_rc(uint16_t val, uint16_t max_val)
+{
+  const uint16_t min_rc=1000, max_rc=2000;
+  float tmp;
+  //limit value to minimum
+  if(val < min_rc)
+  {
+    val = min_rc;
+  }
+  if(val > max_rc)
+  {
+    val = max_rc;
+  }
+  val -= min_rc;
+
+  tmp = val;
+  tmp *= max_val/((float)(max_rc-min_rc));
+  return round(tmp);
+}
 
 void loop()
 {
@@ -125,35 +166,24 @@ void loop()
   if (millis() - last_rc_update >= 20)
   {
     last_rc_update = millis();
-    pattern_info.hue = map(rc_link.getChannel(3), 1000, 2000, 0, 255);
-    pattern_info.brt = map(rc_link.getChannel(4), 1000, 2000, 0, 255);
-    pattern_info.sat = map(rc_link.getChannel(6), 1000, 2000, 0, 255);
+    pattern_info.hue = map_rc(rc_link.getChannel(3), 0xFFFF);
+    pattern_info.brt = map_rc(rc_link.getChannel(4), 0xFF);
+    pattern_info.sat = map_rc(rc_link.getChannel(6), 0xFF);
     pattern_info.flight_mode = (rc_link.getChannel(7) > 1500)?FLIGHT_MODE_GLIDE:FLIGHT_MODE_LAUNCH;
     pattern_info.led_mode = map_led_mode(rc_link.getChannel(8));
   }
-
-  if (millis() - last_flash >= 500)
+  if(rc_link.isLinkUp())
   {
-    last_flash = millis();
-    if(board_led_state == LED_BLINK_OFF)
-    {
-      if(rc_link.isLinkUp())
-      {
-        board_led_state = LED_STAT_GOOD;
-        Serial.println("Blink good!");
-      }
-      else
-      {
-        board_led_state = LED_STAT_LINK_LOST;
-        Serial.println("Blink link lost");
-      }
-    }
-    else
-    {
-      board_led_state = LED_BLINK_OFF;
-    }
+    board_led_state = LED_STAT_GOOD;
+  }
+  else
+  {
+    board_led_state = LED_STAT_LINK_LOST;
   }
 }
+
+// LED task update period in ms
+#define LED_UPDATE_PERIOD 10
 
 void LED_task_func(void *p)
 {
@@ -161,25 +191,45 @@ void LED_task_func(void *p)
   static Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN);
   static Adafruit_NeoPixel board_led(1, PIN_NEOPIXEL);
   PIXEL_COLOR color;
-  unsigned char led_hue = 0;
+  PIXEL_COLOR front_color, right_color, left_color, rear_color;
+  uint16_t led_hue = 0;
   unsigned int led_num=0, led_brt=0;
   TickType_t LED_LastWakeTime;
-  const TickType_t LED_delay = 10 / portTICK_PERIOD_MS;
+  const TickType_t LED_delay = LED_UPDATE_PERIOD / portTICK_PERIOD_MS;
   BaseType_t WasDelayed;
+  int board_led_count=0;
+  int board_led_step=0;
 
   //setup NC pins
+  /*
   digitalWrite(NC_RED_PIN, LOW);
   digitalWrite(NC_GREEN_PIN, LOW);
-  digitalWrite(NC_BLUE_PIN, LOW);
+  digitalWrite(NC_BLUE_PIN, HIGH);
   pinMode(NC_RED_PIN, OUTPUT);
   pinMode(NC_GREEN_PIN, OUTPUT);
   pinMode(NC_BLUE_PIN, OUTPUT);
+  */
+
+  ledcSetup(RED_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(RED_PWM_CHANNEL, 0);
+  ledcAttachPin(NC_RED_PIN, RED_PWM_CHANNEL);
+
+  ledcSetup(GREEN_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(GREEN_PWM_CHANNEL, 0);
+  ledcAttachPin(NC_GREEN_PIN, GREEN_PWM_CHANNEL);
+
+  ledcSetup(BLUE_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(BLUE_PWM_CHANNEL, 0);
+  ledcAttachPin(NC_BLUE_PIN, BLUE_PWM_CHANNEL);
 
   pinMode(REG_PIN, OUTPUT);
   digitalWrite(REG_PIN, HIGH); //turn regulator on
 
   leds.begin();
+  board_led.setBrightness(255);
   board_led.begin();
+
+  leds.setBrightness(255);
   leds.show();
   board_led.show();
 
@@ -194,7 +244,7 @@ void LED_task_func(void *p)
     {
       led_brt = 0;
       led_num += 1;
-      led_hue += 4;
+      led_hue += 4*256;
       Serial.print("Startup LED ");
       Serial.println(led_num);
     }
@@ -204,8 +254,9 @@ void LED_task_func(void *p)
       //set LED brightness
       //leds[WING_BOT_LEDS - led_num] = CHSV(led_hue, 255, led_brt);
       //leds[RIGHT_WING_START_IDX + led_num -1] = CHSV(led_hue, 255, led_brt);
-      leds.setPixelColor(WING_BOT_LEDS - led_num, leds.ColorHSV(led_hue, 255, led_brt));
-      leds.setPixelColor(RIGHT_WING_START_IDX + led_num -1, leds.ColorHSV(led_hue, 255, led_brt));
+      color = leds.gamma32(leds.ColorHSV(led_hue, 255, led_brt));
+      leds.setPixelColor(WING_BOT_LEDS - led_num - 1, color);
+      leds.setPixelColor(RIGHT_WING_START_IDX + led_num, color);
     }
     //show LEDs
     leds.show();
@@ -214,24 +265,101 @@ void LED_task_func(void *p)
   }
   for(;;)
   {
-    //fill_solid(leds, NUM_LEDS, CHSV(pattern_info.hue, pattern_info.sat, pattern_info.brt));
-    switch(board_led_state)
+    color = leds.gamma32(leds.ColorHSV(pattern_info.hue, pattern_info.sat, pattern_info.brt));
+
+    front_color = leds.gamma32(leds.ColorHSV(pattern_info.hue, pattern_info.sat, pattern_info.brt));
+    right_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_25PCT, pattern_info.sat, pattern_info.brt));
+    left_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_50PCT, pattern_info.sat, pattern_info.brt));
+    rear_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_75PCT, pattern_info.sat, pattern_info.brt));
+
+    for(int i=0;i<NUM_LEDS;i++)
     {
-    case LED_BLINK_OFF:
-      board_led.setPixelColor(0, 0, 0, 0);
-      break;
-    case LED_ERROR_CRSF:
-      board_led.setPixelColor(0, 255, 0, 0);
-      break;
-    case LED_STAT_GOOD:
-      board_led.setPixelColor(0, 0, 255, 0);
-      break;
-    case LED_STAT_LINK_LOST:
-      board_led.setPixelColor(0, 255, 255, 0);
-      break;
+      if(i < PARALLEL_LEDS)
+      {
+        leds.setPixelColor(i, front_color);
+      }
+      else if(i < WING_BOT_LEDS)
+      {
+        leds.setPixelColor(i, left_color);
+      }
+      else if(i < WING_BOT_LEDS + WING_TOP_LEDS)
+      {
+        leds.setPixelColor(i, left_color);
+      }
+      else if(i == TOP_LED_IDX_L)
+      {
+        leds.setPixelColor(i, color_swap(left_color));
+      }
+      else if(i == AFT_LED_IDX_L)
+      {
+        leds.setPixelColor(i, color_swap(rear_color));
+      }
+      else if(i < TOP_LED_IDX_R)
+      {
+        leds.setPixelColor(i, rear_color);
+      }
+      else if( i == TOP_LED_IDX_R)
+      {
+        leds.setPixelColor(i, color_swap(right_color));
+      }
+      else if( i == AFT_LED_IDX_R)
+      {
+        leds.setPixelColor(i, color_swap(rear_color));
+      }
+      else if(i < RIGHT_WING_START_IDX)
+      {
+        leds.setPixelColor(i, right_color);
+      }
+      else if(i < RIGHT_WING_START_IDX + WING_TIP_LEDS)
+      {
+        leds.setPixelColor(i, right_color);
+      }
+      else
+      {
+        leds.setPixelColor(i, front_color);
+      }
+    }
+    //set nosecone color
+    ledcWrite(RED_PWM_CHANNEL, (front_color & RED_MASK) >> RED_SHIFT);
+    ledcWrite(GREEN_PWM_CHANNEL, (front_color & GREEN_MASK) >> GREEN_SHIFT);
+    ledcWrite(BLUE_PWM_CHANNEL, (front_color & BLUE_MASK) >> BLUE_SHIFT);
+
+    if(board_led_count <= 0)
+    {
+      //set default period 1s
+      board_led_count = 1000/LED_UPDATE_PERIOD;
+      switch(board_led_state)
+      {
+      case LED_STAT_STARTUP:
+        board_led_count = 100/LED_UPDATE_PERIOD;
+        board_led.setPixelColor(0, 0, 0, 255);
+        break;
+      case LED_ERROR_CRSF:
+        board_led.setPixelColor(0, 255, 0, 0);
+        break;
+      case LED_STAT_GOOD:
+        board_led.setPixelColor(0, 0, 255, 0);
+        break;
+      case LED_STAT_WIFI:
+        board_led_count = 50/LED_UPDATE_PERIOD;
+        board_led.setPixelColor(0, 0, 255, 0);
+        break;
+      case LED_STAT_LINK_LOST:
+        board_led.setPixelColor(0, 255, 255, 0);
+        break;
+      }
+      if(board_led_step)
+      {
+        board_led.setPixelColor(0, 0, 0, 0);
+      }
+      board_led_step = !board_led_step;
+      board_led.show();
+    }
+    else
+    {
+      board_led_count -= 1;
     }
     //show LEDs
-    board_led.show();
     leds.show();
     // Wait for the next cycle.
     WasDelayed = xTaskDelayUntil( &LED_LastWakeTime, LED_delay);
