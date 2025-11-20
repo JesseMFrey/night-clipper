@@ -29,10 +29,6 @@ typedef uint32_t PIXEL_COLOR;
 #define GREEN_SHIFT   (8)
 #define BLUE_SHIFT    (0)
 
-#define RED_PWM_CHANNEL       (1)
-#define GREEN_PWM_CHANNEL     (2)
-#define BLUE_PWM_CHANNEL      (3)
-
 #define NC_PWM_RESOLUTION     (8)
 #define NC_PWM_FREQ           (500)
 
@@ -210,17 +206,14 @@ void LED_task_func(void *p)
   pinMode(NC_BLUE_PIN, OUTPUT);
   */
 
-  ledcSetup(RED_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
-  ledcWrite(RED_PWM_CHANNEL, 0);
-  ledcAttachPin(NC_RED_PIN, RED_PWM_CHANNEL);
+  ledcAttach(NC_RED_PIN, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(NC_RED_PIN, 0);
 
-  ledcSetup(GREEN_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
-  ledcWrite(GREEN_PWM_CHANNEL, 0);
-  ledcAttachPin(NC_GREEN_PIN, GREEN_PWM_CHANNEL);
+  ledcAttach(NC_GREEN_PIN, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(NC_GREEN_PIN, 0);
 
-  ledcSetup(BLUE_PWM_CHANNEL, NC_PWM_FREQ, NC_PWM_RESOLUTION);
-  ledcWrite(BLUE_PWM_CHANNEL, 0);
-  ledcAttachPin(NC_BLUE_PIN, BLUE_PWM_CHANNEL);
+  ledcAttach(NC_BLUE_PIN, NC_PWM_FREQ, NC_PWM_RESOLUTION);
+  ledcWrite(NC_BLUE_PIN, 0);
 
   pinMode(REG_PIN, OUTPUT);
   digitalWrite(REG_PIN, HIGH); //turn regulator on
@@ -320,9 +313,9 @@ void LED_task_func(void *p)
       }
     }
     //set nosecone color
-    ledcWrite(RED_PWM_CHANNEL, (front_color & RED_MASK) >> RED_SHIFT);
-    ledcWrite(GREEN_PWM_CHANNEL, (front_color & GREEN_MASK) >> GREEN_SHIFT);
-    ledcWrite(BLUE_PWM_CHANNEL, (front_color & BLUE_MASK) >> BLUE_SHIFT);
+    ledcWrite(NC_RED_PIN, (front_color & RED_MASK) >> RED_SHIFT);
+    ledcWrite(NC_GREEN_PIN, (front_color & GREEN_MASK) >> GREEN_SHIFT);
+    ledcWrite(NC_BLUE_PIN, (front_color & BLUE_MASK) >> BLUE_SHIFT);
 
     if(board_led_count <= 0)
     {
