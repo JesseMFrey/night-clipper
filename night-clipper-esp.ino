@@ -64,6 +64,9 @@ StaticTask_t LED_task;
 
 enum Led_Stat {LED_STAT_STARTUP=0,LED_ERROR_CRSF, LED_STAT_GOOD, LED_STAT_LINK_LOST, LED_STAT_WIFI};
 
+// alias for serial port redifine as needed
+#define Serial_elrs Serial1
+
 Led_Stat board_led_state = LED_STAT_STARTUP;
 AlfredoCRSF rc_link = AlfredoCRSF();
 
@@ -95,15 +98,15 @@ void setup()
 
   Serial.begin();
 
-  Serial1.begin(420000);
-  if(!Serial1)
+  Serial_elrs.begin(420000);
+  if(!Serial_elrs)
   {
     board_led_state = LED_ERROR_CRSF;
     while (!Serial);
     Serial.println("Failed to init CRSF");
     for(;;);
   }
-  rc_link.begin(Serial1);
+  rc_link.begin(Serial_elrs);
 }
 
 unsigned long last_flash = 0;
