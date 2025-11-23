@@ -186,16 +186,7 @@ void LED_task_func(void *p)
   int board_led_count=0;
   int board_led_step=0;
 
-  //setup NC pins
-  /*
-  digitalWrite(NC_RED_PIN, LOW);
-  digitalWrite(NC_GREEN_PIN, LOW);
-  digitalWrite(NC_BLUE_PIN, HIGH);
-  pinMode(NC_RED_PIN, OUTPUT);
-  pinMode(NC_GREEN_PIN, OUTPUT);
-  pinMode(NC_BLUE_PIN, OUTPUT);
-  */
-
+  //setup NC pins for PWM
   ledcAttach(NC_RED_PIN, NC_PWM_FREQ, NC_PWM_RESOLUTION);
   ledcWrite(NC_RED_PIN, 0);
 
