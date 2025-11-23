@@ -1,3 +1,8 @@
+#ifndef __MSP_GPS_H
+#define __MSP_GPS_H
+
+#include <cstdint>
+#include <AlfredoCRSF.h>
 
 //#define MSP_PORT_INBUF_SIZE 192
 //GPS packets are smaller, we don't need so much space
@@ -81,8 +86,9 @@ typedef struct __attribute__((packed)){
     uint8_t sec;
 } mspGPSdat_t;
 
+extern void populate_gps_packet(crsf_sensor_gps_t *crsf_packet, const mspGPSdat_t *msp_packet);
+extern void mspGPS_ProcessReceivedPacketData(mspPacket_t *mspPacket, uint8_t c);
 
-uint8_t crc8_calc(uint8_t crc, unsigned char a, uint8_t poly);
-uint8_t crc8_update(uint8_t crc, const void *data, uint32_t length, uint8_t poly);
-#define crc8_dvb_s2(crc, a)                         crc8_calc(crc, a, 0xD5)
-#define crc8_dvb_s2_update(crc, data, length)       crc8_update(crc, data, length, 0xD5)
+extern mspPacket_t gps_stat;
+
+#endif

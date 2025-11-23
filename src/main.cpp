@@ -180,173 +180,18 @@ uint16_t map_rc(uint16_t val, uint16_t max_val)
 unsigned long last_gps_update = 0;
 int have_gps = 0;
 
-mspPacket_t gps_stat = {.packetState=MSP_IDLE};
-
-// This is a stripped down version of the beta flight MSP processing code
-void mspGPS_ProcessReceivedPacketData(mspPacket_t *mspPacket, uint8_t c)
-{
-    switch (mspPacket->packetState) {
-        default:
-        case MSP_IDLE:
-        case MSP_HEADER_START:  // Waiting for 'X' (MSPv2 native)
-            mspPacket->offset = 0;
-            mspPacket->checksum1 = 0;
-            mspPacket->checksum2 = 0;
-            switch (c) {
-                case 'X':
-                    mspPacket->packetState = MSP_HEADER_X;
-                    break;
-                default:
-                    mspPacket->packetState = MSP_IDLE;
-                    break;
-            }
-            break;
-
-        case MSP_HEADER_X:
-            mspPacket->packetState = MSP_HEADER_V2_NATIVE;
-            switch (c) {
-                case '<':
-                    mspPacket->packetType = MSP_PACKET_COMMAND;
-                    break;
-                case '>':
-                    mspPacket->packetType = MSP_PACKET_REPLY;
-                    break;
-                default:
-                    mspPacket->packetState = MSP_IDLE;
-                    break;
-            }
-            break;
-
-        case MSP_HEADER_V2_NATIVE:
-            mspPacket->inBuf[mspPacket->offset++] = c;
-            mspPacket->checksum2 = crc8_dvb_s2(mspPacket->checksum2, c);
-            if (mspPacket->offset == sizeof(mspHeaderV2_t)) {
-                mspHeaderV2_t * hdrv2 = (mspHeaderV2_t *)&mspPacket->inBuf[0];
-                mspPacket->dataSize = hdrv2->size;
-                mspPacket->cmdMSP = hdrv2->cmd;
-                mspPacket->cmdFlags = hdrv2->flags;
-                mspPacket->offset = 0;                // re-use buffer
-                mspPacket->packetState = mspPacket->dataSize > 0 ? MSP_PAYLOAD_V2_NATIVE : MSP_CHECKSUM_V2_NATIVE;
-            }
-            break;
-
-        case MSP_PAYLOAD_V2_NATIVE:
-            mspPacket->checksum2 = crc8_dvb_s2(mspPacket->checksum2, c);
-            mspPacket->inBuf[mspPacket->offset++] = c;
-
-            if (mspPacket->offset == mspPacket->dataSize) {
-                mspPacket->packetState = MSP_CHECKSUM_V2_NATIVE;
-            }
-            break;
-
-        case MSP_CHECKSUM_V2_NATIVE:
-            if (mspPacket->checksum2 == c) {
-                mspPacket->packetState = MSP_COMMAND_RECEIVED;
-            } else {
-                mspPacket->packetState = MSP_IDLE;
-            }
-            break;
-    }
-}
-
-
-uint8_t crc8_calc(uint8_t crc, unsigned char a, uint8_t poly)
-{
-    crc ^= a;
-    for (int ii = 0; ii < 8; ++ii) {
-        if (crc & 0x80) {
-            crc = (crc << 1) ^ poly;
-        } else {
-            crc = crc << 1;
-        }
-    }
-    return crc;
-}
-
-uint8_t crc8_update(uint8_t crc, const void *data, uint32_t length, uint8_t poly)
-{
-    const uint8_t *p = (const uint8_t *)data;
-    const uint8_t *pend = p + length;
-
-    for (; p != pend; p++) {
-        crc = crc8_calc(crc, *p, poly);
-    }
-    return crc;
-}
-
-uint16_t get_uint16(void *ptr)
-{
-  return (*(uint8_t*)ptr) | ((*(uint8_t*)ptr+1)<<8);
-}
-
-uint32_t get_uint32(void *ptr)
-{
-  uint8_t *bptr=(uint8_t*)ptr;
-  return (bptr[0]) | (bptr[1]<<8) | (bptr[2]<<16) | (bptr[3]<<24);
-}
-
-void sendGps(int32_t latitude, int32_t longitude, int16_t groundspeed, int16_t heading, int32_t altitude, uint8_t satellites)
-{
-  static crsf_sensor_gps_t crsfGps = { 0 };
-
-  // Values are MSB first (BigEndian)
-  crsfGps.latitude = htobe32(latitude);
-  crsfGps.longitude = htobe32(longitude);
-  crsfGps.groundspeed = htobe16(groundspeed);
-  crsfGps.heading = htobe16(heading); //TODO: test heading
-  crsfGps.altitude = htobe16(altitude);
-  crsfGps.satellites = satellites;
-  rc_link.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_GPS, &crsfGps, sizeof(crsfGps));
-}
-
 void handle_GPS_packet(mspPacket_t *gpsPacket)
 {
-  int32_t lat, lon, alt;
-  uint16_t groundspeed;
-  int32_t ned_v_north, ned_v_east;
-  int16_t heading;
+  static crsf_sensor_gps_t gps_to_send = { 0 };
 
   // we got a GPS packet, update GPS packet time
   last_gps_update = millis();
   have_gps = 1;
 
-  mspGPSdat_t *gps_dat = (mspGPSdat_t*)gpsPacket->inBuf;
-  // get lat and lon in 1/1e7 ths of a degree, no change needed
-  lat = get_uint32(&gps_dat->lat);
-  lon = get_uint32(&gps_dat->lon);
-  //get velocities for groundspeed
-  ned_v_north = get_uint32(&gps_dat->ned_vel_north);
-  ned_v_east = get_uint32(&gps_dat->ned_vel_east);
-  groundspeed = sqrt(ned_v_north*ned_v_north + ned_v_east*ned_v_east)/10;
-  //heading value in 100ths of a degree, convert to 100ths of a degree
-  heading = (gps_dat->ground_course % 36000);
-  alt = get_uint32(&gps_dat->altCm)/100 + 1000;
-
-#ifdef DEBUG
-  Serial.println("GPS packet recived!");
-  Serial.print("Lat :");
-  Serial.println(lat/(float)1e7);
-
-  Serial.print("Lon :");
-  Serial.println(lon/(float)1e7);
-
-  Serial.print("Alt : ");
-  Serial.println(alt - 1000);
-
-  Serial.print("Ground speed : ");
-  Serial.println(groundspeed);
-
-  Serial.print("Heading : ");
-  Serial.println(heading/(float)100);
-
-  Serial.print("Num Sat : ");
-  Serial.println(gps_dat->satellites_in_view);
-
-  Serial.println();
-  Serial.println();
-#endif
-
-  sendGps(lat, lon, groundspeed, heading, alt, gps_dat->satellites_in_view);
+  // translate from MSP to CRSF
+  populate_gps_packet(&gps_to_send, (mspGPSdat_t*)gpsPacket->inBuf);
+  //send packet
+  rc_link.queuePacket(CRSF_SYNC_BYTE, CRSF_FRAMETYPE_GPS, &gps_to_send, sizeof(gps_to_send));
 }
 
 
