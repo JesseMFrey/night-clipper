@@ -5,64 +5,13 @@
 #include <limits.h>
 #include <math.h>
 #include "MSP_GPS.h"
-
-//#define DEBUG
+#include "leds.h"
+#include "pindefs.h"
 
 enum{FLIGHT_MODE_GLIDE=0,FLIGHT_MODE_LAUNCH};
 enum{LED_MODE_STARTUP=0,LED_MODE_0,LED_MODE_1,LED_MODE_2};
 
-typedef uint32_t PIXEL_COLOR;
-
-#define HUE_25PCT     ((0xFFFF)/4)
-#define HUE_50PCT     ((0xFFFF)/2)
-#define HUE_75PCT     ((0xFFFF) - HUE_25PCT)
-
-#define LED_PIN        A0
-#define REG_PIN        A1
-
-#define GPS_SERIAL_PIN SCL
-//dummy pin for GPS serial
-#define GPS_DUMMY_TX_PIN MOSI
-
-#define NC_RED_PIN    A2
-#define NC_GREEN_PIN  A3
-#define NC_BLUE_PIN   SDA
-
-#define RED_MASK      (0x00FF0000)
-#define GREEN_MASK    (0x0000FF00)
-#define BLUE_MASK     (0x000000FF)
-
-#define RED_SHIFT     (16)
-#define GREEN_SHIFT   (8)
-#define BLUE_SHIFT    (0)
-
-#define NC_PWM_RESOLUTION     (8)
-#define NC_PWM_FREQ           (500)
-
-#define WING_TIP_LEDS (28)
-#define PARALLEL_LEDS (44)
-#define WING_BOT_LEDS (PARALLEL_LEDS + WING_TIP_LEDS)
-#define WING_TOP_LEDS (50)
-#define TAIL_LEDS (20)
-
-#define AFT_LED_IDX_L (WING_BOT_LEDS + WING_TOP_LEDS + 1)
-#define AFT_LED_IDX_R (WING_BOT_LEDS + WING_TOP_LEDS + 2 + 2*TAIL_LEDS + 1)
-
-#define TOP_LED_IDX_L (WING_BOT_LEDS + WING_TOP_LEDS)
-#define TOP_LED_IDX_R (WING_BOT_LEDS + WING_TOP_LEDS + 2 + 2*TAIL_LEDS)
-
-#define LEFT_WING_START_IDX     (0)
-#define LEFT_TAIL_START_IDX     (WING_BOT_LEDS + 2 + WING_TOP_LEDS)
-#define RIGHT_WING_START_IDX    (WING_BOT_LEDS + 2*TAIL_LEDS + 4 + 2*WING_TOP_LEDS)
-#define RIGHT_TAIL_START_IDX    (LEFT_TAIL_START_IDX + TAIL_LEDS)
-
-// 2 strings (left and right) 72 LEDS parallel to body, 28 to wingtip
-// 2 tail strings (one on either side) of 20 LEDs each
-// 4 discrete LEDS on the aft end
-#define NUM_LEDS (2 * (WING_BOT_LEDS + WING_TOP_LEDS + TAIL_LEDS) + 4)
-
 #define LED_TASK_PRIORITY     2
-
 
 #define LED_TASK_STACK_SIZE   10000
 StackType_t LED_task_stack[LED_TASK_STACK_SIZE];
@@ -71,24 +20,8 @@ StaticTask_t LED_task;
 
 enum Led_Stat {LED_STAT_STARTUP=0,LED_ERROR_CRSF, LED_ERROR_GPS, LED_STAT_GOOD, LED_STAT_LINK_LOST, LED_STAT_WIFI};
 
-// aliases for serial ports redifine as needed
-#define Serial_elrs Serial1
-#define Serial_gps  Serial2
-
 Led_Stat board_led_state = LED_STAT_STARTUP;
 AlfredoCRSF rc_link = AlfredoCRSF();
-
-
-//swap red and green on a color
-PIXEL_COLOR color_swap(PIXEL_COLOR color)
-{
-  PIXEL_COLOR temp = color & ~(RED_MASK|GREEN_MASK);
-
-  temp |= ((color & RED_MASK) >> RED_SHIFT) << GREEN_SHIFT;
-  temp |= ((color & GREEN_MASK) >> GREEN_SHIFT) << RED_SHIFT;
-  return temp;
-}
-
 
 void LED_task_func(void *p);
 
