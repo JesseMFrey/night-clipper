@@ -15,8 +15,6 @@ enum{LED_MODE_STARTUP=0,LED_MODE_0,LED_MODE_1,LED_MODE_2};
 
 AlfredoCRSF rc_link = AlfredoCRSF();
 
-void LED_task_func(void *p);
-
 void setup()
 {
   xTaskCreateStaticPinnedToCore(LED_task_func,
@@ -55,6 +53,7 @@ void setup()
 
 unsigned long last_flash = 0;
 unsigned long last_rc_update = 0;
+unsigned long last_gps_update = 0;
 
 int map_led_mode(int mode_val)
 {
@@ -96,8 +95,6 @@ uint16_t map_rc(uint16_t val, uint16_t max_val)
   return round(tmp);
 }
 
-unsigned long last_gps_update = 0;
-int have_gps = 0;
 
 void handle_GPS_packet(mspPacket_t *gpsPacket)
 {
@@ -105,7 +102,6 @@ void handle_GPS_packet(mspPacket_t *gpsPacket)
 
   // we got a GPS packet, update GPS packet time
   last_gps_update = millis();
-  have_gps = 1;
 
   // translate from MSP to CRSF
   populate_gps_packet(&gps_to_send, (mspGPSdat_t*)gpsPacket->inBuf);
@@ -151,5 +147,4 @@ void loop()
       gps_stat.packetState = MSP_IDLE;
     }
   }
-
 }
