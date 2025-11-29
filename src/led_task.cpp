@@ -90,55 +90,42 @@ void LED_task_func(void *p)
 
     for(int i=0;i<NUM_LEDS;i++)
     {
-      if(i < PARALLEL_LEDS)
+      switch(index_to_segment(i))
       {
-        leds.setPixelColor(i, front_color);
+        case LED_SEG_FRONT_LEFT:
+        case LED_SEG_FRONT_RIGHT:
+          leds.setPixelColor(i, front_color);
+          break;
+        case LED_SEG_VERT_LEFT:
+        case LED_SEG_VERT_RIGHT:
+          leds.setPixelColor(i, rear_color);
+          break;
+        case LED_SEG_WING_BOT_LEFT:
+        case LED_SEG_WING_TOP_LEFT:
+          leds.setPixelColor(i, left_color);
+          break;
+        case LED_SEG_WING_BOT_RIGHT:
+        case LED_SEG_WING_TOP_RIGHT:
+          leds.setPixelColor(i, right_color);
+          break;
+        // These LEDs have a different color order and need to be fixed
+        case LED_SEG_TOP_LEFT:
+          leds.setPixelColor(i, color_swap(left_color));
+          break;
+        case LED_SEG_TOP_RIGHT:
+          leds.setPixelColor(i, color_swap(right_color));
+          break;
+        case LED_SEG_AFT_LEFT:
+        case LED_SEG_AFT_RIGHT:
+          leds.setPixelColor(i, color_swap(rear_color));
+          break;
       }
-      else if(i < WING_BOT_LEDS)
-      {
-        leds.setPixelColor(i, left_color);
-      }
-      else if(i < WING_BOT_LEDS + WING_TOP_LEDS)
-      {
-        leds.setPixelColor(i, left_color);
-      }
-      else if(i == TOP_LED_IDX_L)
-      {
-        leds.setPixelColor(i, color_swap(left_color));
-      }
-      else if(i == AFT_LED_IDX_L)
-      {
-        leds.setPixelColor(i, color_swap(rear_color));
-      }
-      else if(i < TOP_LED_IDX_R)
-      {
-        leds.setPixelColor(i, rear_color);
-      }
-      else if( i == TOP_LED_IDX_R)
-      {
-        leds.setPixelColor(i, color_swap(right_color));
-      }
-      else if( i == AFT_LED_IDX_R)
-      {
-        leds.setPixelColor(i, color_swap(rear_color));
-      }
-      else if(i < RIGHT_WING_START_IDX)
-      {
-        leds.setPixelColor(i, right_color);
-      }
-      else if(i < RIGHT_WING_START_IDX + WING_TIP_LEDS)
-      {
-        leds.setPixelColor(i, right_color);
-      }
-      else
-      {
-        leds.setPixelColor(i, front_color);
-      }
+      //long hue = (HUE_MAX * (long)contiguous_index(i))/contiguous_length(i);
+      //PIXEL_COLOR c = leds.gamma32(leds.ColorHSV(hue, 255, 255));
+      //leds.setPixelColor(i, c);
     }
     //set nosecone color
-    ledcWrite(NC_RED_PIN, (front_color & RED_MASK) >> RED_SHIFT);
-    ledcWrite(NC_GREEN_PIN, (front_color & GREEN_MASK) >> GREEN_SHIFT);
-    ledcWrite(NC_BLUE_PIN, (front_color & BLUE_MASK) >> BLUE_SHIFT);
+    set_nosecone(front_color);
 
     if(board_led_count <= 0)
     {
