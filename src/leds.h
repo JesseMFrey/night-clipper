@@ -3,10 +3,11 @@
 
 typedef uint32_t PIXEL_COLOR;
 
-#define HUE_25PCT     ((0xFFFF)/4)
-#define HUE_50PCT     ((0xFFFF)/2)
-#define HUE_75PCT     ((0xFFFF) - HUE_25PCT)
 
+#define HUE_MAX       (0xFFFF)
+#define HUE_25PCT     (HUE_MAX/4)
+#define HUE_50PCT     (HUE_MAX/2)
+#define HUE_75PCT     (HUE_MAX - HUE_25PCT)
 #define RED_MASK      (0x00FF0000)
 #define GREEN_MASK    (0x0000FF00)
 #define BLUE_MASK     (0x000000FF)
