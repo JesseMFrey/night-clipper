@@ -1,6 +1,8 @@
 #ifndef __PINDEFS_H
 #define __PINDEFS_H
 
+#include <Arduino.h>
+
 #define LED_PIN        A0
 #define REG_PIN        A1
 

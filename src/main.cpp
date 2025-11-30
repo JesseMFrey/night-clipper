@@ -10,17 +10,15 @@
 #include "led_task.h"
 #include "pattern.h"
 
-enum{FLIGHT_MODE_GLIDE=0,FLIGHT_MODE_LAUNCH};
-enum{LED_MODE_STARTUP=0,LED_MODE_0,LED_MODE_1,LED_MODE_2};
-
 AlfredoCRSF rc_link = AlfredoCRSF();
+Pattern LED_pattern = Pattern();
 
 void setup()
 {
   xTaskCreateStaticPinnedToCore(LED_task_func,
                                 "LED",
                                 LED_TASK_STACK_SIZE,
-                                NULL,
+                                &LED_pattern,
                                 LED_TASK_PRIORITY,
                                 LED_task_stack,
                                 &LED_task,
@@ -54,26 +52,6 @@ void setup()
 unsigned long last_flash = 0;
 unsigned long last_rc_update = 0;
 unsigned long last_gps_update = 0;
-
-int map_led_mode(int mode_val)
-{
-  int mode_idx;
-  if(mode_val < 1250)
-  {
-    mode_idx = 0;
-  }
-  else if(mode_val < 1750)
-  {
-    mode_idx = 1;
-  }
-  else
-  {
-    mode_idx =2;
-  }
-  //TODO: apply map table?
-  return LED_MODE_0 + mode_idx;
-}
-
 
 uint16_t map_rc(uint16_t val, uint16_t max_val)
 {
@@ -117,11 +95,13 @@ void loop()
   if (millis() - last_rc_update >= 20)
   {
     last_rc_update = millis();
-    pattern_info.hue = map_rc(rc_link.getChannel(3), 0xFFFF);
-    pattern_info.brt = map_rc(rc_link.getChannel(4), 0xFF);
-    pattern_info.sat = map_rc(rc_link.getChannel(6), 0xFF);
-    pattern_info.flight_mode = (rc_link.getChannel(7) > 1500)?FLIGHT_MODE_GLIDE:FLIGHT_MODE_LAUNCH;
-    pattern_info.led_mode = map_led_mode(rc_link.getChannel(8));
+    LED_pattern.update_params(
+        map_rc(rc_link.getChannel(3), 0xFFFF),
+        map_rc(rc_link.getChannel(6), 0xFF),
+        map_rc(rc_link.getChannel(4), 0xFF),
+        (rc_link.getChannel(7) > 1500)?FLIGHT_MODE_GLIDE:FLIGHT_MODE_LAUNCH,
+        rc_link.getChannel(8)
+      );
   }
   if(rc_link.isLinkUp())
   {

@@ -13,10 +13,9 @@ StaticTask_t LED_task;
 
 Led_Stat board_led_state = LED_STAT_STARTUP;
 
-pattern_state_t  pattern_info;
-
 void LED_task_func(void *p)
 {
+  Pattern * pattern_info = (Pattern*)p;
   //add one LED for the board LED
   static Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN);
   static Adafruit_NeoPixel board_led(1, PIN_NEOPIXEL);
@@ -43,90 +42,22 @@ void LED_task_func(void *p)
   pinMode(REG_PIN, OUTPUT);
   digitalWrite(REG_PIN, HIGH); //turn regulator on
 
-  leds.begin();
   board_led.setBrightness(255);
   board_led.begin();
+  board_led.show();
 
+  leds.begin();
   leds.setBrightness(255);
   leds.show();
-  board_led.show();
+
+  pattern_info->begin(&leds);
 
 
   // Initialise the xLastWakeTime variable with the current time.
   LED_LastWakeTime = xTaskGetTickCount ();
 
-  while(led_num < WING_BOT_LEDS)
-  {
-    led_brt += 30;
-    if(led_brt > 255)
-    {
-      led_brt = 0;
-      led_num += 1;
-      led_hue += 4*256;
-    }
-    //this is here to make sure we don't write off the end of the array
-    if(led_brt)
-    {
-      //set LED brightness
-      //leds[WING_BOT_LEDS - led_num] = CHSV(led_hue, 255, led_brt);
-      //leds[RIGHT_WING_START_IDX + led_num -1] = CHSV(led_hue, 255, led_brt);
-      color = leds.gamma32(leds.ColorHSV(led_hue, 255, led_brt));
-      leds.setPixelColor(WING_BOT_LEDS - led_num - 1, color);
-      leds.setPixelColor(RIGHT_WING_START_IDX + led_num, color);
-    }
-    //show LEDs
-    leds.show();
-    // Wait for the next cycle.
-    WasDelayed = xTaskDelayUntil( &LED_LastWakeTime, LED_delay);
-  }
   for(;;)
   {
-    color = leds.gamma32(leds.ColorHSV(pattern_info.hue, pattern_info.sat, pattern_info.brt));
-
-    front_color = leds.gamma32(leds.ColorHSV(pattern_info.hue, pattern_info.sat, pattern_info.brt));
-    right_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_25PCT, pattern_info.sat, pattern_info.brt));
-    left_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_50PCT, pattern_info.sat, pattern_info.brt));
-    rear_color = leds.gamma32(leds.ColorHSV(pattern_info.hue + HUE_75PCT, pattern_info.sat, pattern_info.brt));
-
-    for(int i=0;i<NUM_LEDS;i++)
-    {
-      switch(index_to_segment(i))
-      {
-        case LED_SEG_FRONT_LEFT:
-        case LED_SEG_FRONT_RIGHT:
-          leds.setPixelColor(i, front_color);
-          break;
-        case LED_SEG_VERT_LEFT:
-        case LED_SEG_VERT_RIGHT:
-          leds.setPixelColor(i, rear_color);
-          break;
-        case LED_SEG_WING_BOT_LEFT:
-        case LED_SEG_WING_TOP_LEFT:
-          leds.setPixelColor(i, left_color);
-          break;
-        case LED_SEG_WING_BOT_RIGHT:
-        case LED_SEG_WING_TOP_RIGHT:
-          leds.setPixelColor(i, right_color);
-          break;
-        // These LEDs have a different color order and need to be fixed
-        case LED_SEG_TOP_LEFT:
-          leds.setPixelColor(i, color_swap(left_color));
-          break;
-        case LED_SEG_TOP_RIGHT:
-          leds.setPixelColor(i, color_swap(right_color));
-          break;
-        case LED_SEG_AFT_LEFT:
-        case LED_SEG_AFT_RIGHT:
-          leds.setPixelColor(i, color_swap(rear_color));
-          break;
-      }
-      //long hue = (HUE_MAX * (long)contiguous_index(i))/contiguous_length(i);
-      //PIXEL_COLOR c = leds.gamma32(leds.ColorHSV(hue, 255, 255));
-      //leds.setPixelColor(i, c);
-    }
-    //set nosecone color
-    set_nosecone(front_color);
-
     if(board_led_count <= 0)
     {
       //set default period 1s
@@ -166,8 +97,10 @@ void LED_task_func(void *p)
     {
       board_led_count -= 1;
     }
-    //show LEDs
-    leds.show();
+
+    pattern_info->update_colors();
+    pattern_info->update_LEDs();
+
     // Wait for the next cycle.
     WasDelayed = xTaskDelayUntil( &LED_LastWakeTime, LED_delay);
   }
